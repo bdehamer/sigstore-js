@@ -1,0 +1,47 @@
+name: build-sign-verify-node
+on: [push]
+jobs:
+
+  build-package:
+    name: Build Package
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.hash.outputs.digest }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v3
+    - name: Setup node
+      uses: actions/setup-node@v3
+      with:
+        node-version: 16
+        cache: npm
+    - name: Install dependencies
+      run: npm install
+    - name: Create package
+      run: |
+        npm run build
+        npm pack
+    - name: Generate artifact digest
+      id: hash
+      run:
+        echo "::set-output name=digest::$(sha256sum sigstore-0.0.0.tgz | base64 -w0)"
+    - name: Archive package
+      uses: actions/upload-artifact@v3
+      with:
+        name: package
+        path: sigstore-0.0.0.tgz
+
+  provenance:
+    needs: build-package
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: bdehamer/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@env-spy
+    with:
+      base64-subjects: "${{ needs.build-package.outputs.digest }}"
+
+
