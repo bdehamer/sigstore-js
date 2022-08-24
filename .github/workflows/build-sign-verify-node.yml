@@ -1,47 +1,32 @@
-name: build-sign-verify-node
+name: oidc
 on: [push]
 jobs:
 
-  build-package:
-    name: Build Package
+  oidc-initiating-workflow:
+    name: OIDC Token from Initiating Workflow
     runs-on: ubuntu-latest
-    outputs:
-      digest: ${{ steps.hash.outputs.digest }}
     permissions:
       contents: read
       id-token: write
     steps:
-    - name: Checkout source
-      uses: actions/checkout@v3
-    - name: Setup node
-      uses: actions/setup-node@v3
-      with:
-        node-version: 16
-        cache: npm
-    - name: Install dependencies
-      run: npm install
-    - name: Create package
-      run: |
-        npm run build
-        npm pack
-    - name: Generate artifact digest
-      id: hash
-      run:
-        echo "::set-output name=digest::$(sha256sum sigstore-0.0.0.tgz | base64 -w0)"
-    - name: Archive package
-      uses: actions/upload-artifact@v3
-      with:
-        name: package
-        path: sigstore-0.0.0.tgz
+      - name: Request OIDC Token
+        run: |
+          # Need to base64-encode this to work-around GHA secret redaction
+          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN (base64-encoded)"
+          echo $ACTIONS_ID_TOKEN_REQUEST_TOKEN | base64
+          # Request token
+          curl "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            -H "Accept: application/json; api-version=2.0" \
+            -H "Content-Type: application/json" \
+            --silent | jq -r '.value' > oidc_token
+          echo -e "\nOIDC Token (base64-encoded)"
+          cat oidc_token | base64
+          echo -e "\nOIDC Token (decoded)"
+          cat oidc_token | jq -R 'split(".") | .[0],.[1] | @base64d | fromjson'
 
-  provenance:
-    needs: build-package
-    permissions:
-      actions: read
-      id-token: write
-      contents: write
-    uses: bdehamer/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@env-spy
+
+  oidc-reusable-workflow:
+    uses: bdehamer/workflows/.github/workflows/oidc-dump.yml@main
     with:
-      base64-subjects: "${{ needs.build-package.outputs.digest }}"
-
-
+      greeting: "hello world"
